@@ -1,0 +1,628 @@
+---
+title: "COVID-19 Bulk Seq"
+author: "Maureen Cowan"
+date: "7/6/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+## Import libraries
+```{r}
+library(biomaRt)
+library(ggplot2)
+#library(tidyverse)
+library(dplyr)
+library(data.table)
+library(readr)
+library(DESeq2)
+
+#while installing apeglm tidyverse got knocked out; can't install a dependency on this version of R and will need to consult RC
+#BiocManager::install("ashr")
+```
+
+# Overall GLM
+## Define samples
+```{r}
+sample_files <- c("YM_1_salmon_quant.sf",
+                  "YM_2_salmon_quant.sf",
+                  "YM_3_salmon_quant.sf",
+                  "YM_4_salmon_quant.sf",
+                  "YS_1_salmon_quant.sf",
+                  "YS_2_salmon_quant.sf",
+                  "YS_3_salmon_quant.sf",
+                  "YS_4_salmon_quant.sf",
+                  "AM_1_salmon_quant.sf",
+                  "AM_2_salmon_quant.sf",
+                  "AM_3_salmon_quant.sf",
+                  "AM_4_salmon_quant.sf",
+                  "AS_1_salmon_quant.sf",
+                  "AS_2_salmon_quant.sf",
+                  "AS_3_salmon_quant.sf",
+                  "AS_4_salmon_quant.sf")
+
+names(sample_files) <- c("YM_1", 
+                         "YM_2",
+                         "YM_3",
+                         "YM_4",
+                         "YS_1",
+                         "YS_2",
+                         "YS_3",
+                         "YS_4",
+                         "AM_1",
+                         "AM_2",
+                         "AM_3",
+                         "AM_4",
+                         "AS_1",
+                         "AS_2",
+                         "AS_3",
+                         "AS_4")
+```
+
+## Reference Genome
+```{r}
+listEnsembl()
+
+ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+attributes = listAttributes(ensembl)
+
+ensembl_mm <- getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"), 
+                    mart = ensembl)
+
+colnames(ensembl_mm) = c("TXNAME", "GENEID", "GENENAME")
+
+tx2gene <- ensembl_mm[,1:2] #include only Txname and gene ID for tximport
+```
+
+
+## Import files with TxImport
+```{r}
+library(tximport)
+setwd("/scratch/mnc3ra/covid/salmon_files/quant_files/")
+
+txi <- tximport(files = sample_files, 
+         type = "salmon", 
+         tx2gene = tx2gene,
+         txOut = FALSE, 
+         ignoreTxVersion = TRUE)
+```
+
+## Set rownames to column names
+```{r}
+
+colData <- read.table("/scratch/mnc3ra/covid/analysis/DESeq2_colData.csv", sep = ",", header = TRUE, row.names = 1)
+                                           
+rownames(colData) <- colnames(txi$counts)
+
+colnames(txi$counts) == rownames(colData)
+```
+
+## Differential Expression
+### Assemble dataset
+```{r}
+
+dds = DESeqDataSetFromTximport(txi = txi, 
+                               colData = colData,
+                               design = ~Age + Infection + Age:Infection)
+
+dds <- DESeq(dds)
+```
+
+
+### Generate results tables
+#### Main Effect of SARS-CoV-2 infection
+```{r}
+#a character vector with exactly three elements: the name of a factor in the design formula, the name of the numerator level for the fold change, and the name of the denominator level for the fold change
+
+# greater expression in numerator level than denominator indicates a positive FC
+# e.g. (contrast = "cond", "B", "A") returns log2(B/A)
+
+res_infection <- results(dds, contrast = c("Infection", "COVID_19", "Mock"))
+summary(res_infection)
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds)
+res_infection_LFC <- lfcShrink(dds, coef = "Infection_Mock_vs_COVID_19", type = "apeglm")
+
+```
+
+#### Main effect of Age
+```{r}
+res_age <- results(dds, contrast = c("Age", "Aged", "Young"))
+summary(res_age)
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds)
+res_age_LFC <- lfcShrink(dds, coef = "Age_Young_vs_Aged", type = "apeglm")
+```
+
+#### Interaction effect of Age on Infection
+```{r}
+# Is the infection effect different between age groups?
+resultsNames(dds)
+res_interaction <- results(dds, name = "AgeYoung.InfectionMock")
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds)
+res_interaction_LFC <- lfcShrink(dds, coef = "AgeYoung.InfectionMock", type = "apeglm")
+```
+
+## MA plots
+```{r}
+#scatter plot of log2 fold changes (on the y-axis) versus the mean of normalized counts (on the x-axis)
+
+plotMA(res_infection)
+plotMA(res_age)
+plotMA(res_interaction)
+
+plotMA(res_infection_LFC)
+plotMA(res_age_LFC)
+plotMA(res_interaction_LFC)
+```
+
+## Annotate results tables with gene names
+```{r}
+# save as dataframe
+res_infection <- as.data.frame(res_infection)
+res_age <- as.data.frame(res_age)
+res_interaction <- as.data.frame(res_interaction)
+
+res_infection_LFC <- as.data.frame(res_infection_LFC)
+res_age_LFC <- as.data.frame(res_age_LFC)
+res_interaction_LFC <- as.data.frame(res_interaction_LFC)
+```
+
+```{r}
+# set rownames a first column
+res_infection <- rownames_to_column(res_infection, "GENEID")
+res_age <- rownames_to_column(res_age, "GENEID")
+res_interaction <- rownames_to_column(res_interaction, "GENEID")
+
+res_infection_LFC <- rownames_to_column(res_infection_LFC, "GENEID")
+res_age_LFC <- rownames_to_column(res_age_LFC, "GENEID")
+res_interaction_LFC <- rownames_to_column(res_interaction_LFC, "GENEID")
+
+```
+
+```{r}
+# add gene names using left_join
+ensembl_mm <- ensembl_mm[,2:3]
+ensembl_mm <- unique(ensembl_mm)
+
+res_infection <- left_join(res_infection, ensembl_mm, by = "GENEID")
+res_age <- left_join(res_age, ensembl_mm, by = "GENEID")
+res_interaction <- left_join(res_interaction, ensembl_mm, by = "GENEID")
+
+res_infection_LFC <- left_join(res_infection_LFC, ensembl_mm, by = "GENEID")
+res_age_LFC <- left_join(res_age_LFC, ensembl_mm, by = "GENEID")
+res_interaction_LFC <- left_join(res_interaction_LFC, ensembl_mm, by = "GENEID")
+```
+
+```{r}
+#reorder columns
+res_infection <- res_infection[,c(8, 1:7)]
+res_age <- res_age[,c(8, 1:7)]
+res_interaction <- res_interaction[,c(8, 1:7)]
+
+res_infection_LFC <- res_infection_LFC[,c(7, 1:6)]
+res_age_LFC <- res_age_LFC[,c(7, 1:6)]
+res_interaction_LFC <- res_interaction_LFC[,c(7, 1:6)]
+```
+
+```{r}
+# rename first two columns
+colnames(res_infection)[colnames(res_infection) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_age)[colnames(res_age) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_interaction)[colnames(res_interaction) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+
+colnames(res_infection_LFC)[colnames(res_infection_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_age_LFC)[colnames(res_age_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_interaction_LFC)[colnames(res_interaction_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+```
+
+### Export results tables
+```{r}
+write.table(res_infection, '/scratch/mnc3ra/covid/analysis/results/infection_effect_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_infection_LFC, '/scratch/mnc3ra/covid/analysis/results/infection_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+
+write.table(res_age, '/scratch/mnc3ra/covid/analysis/results/age_effect_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_age_LFC, '/scratch/mnc3ra/covid/analysis/results/age_effect_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+
+write.table(res_interaction, '/scratch/mnc3ra/covid/analysis/results/interaction_effect_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_interaction_LFC, '/scratch/mnc3ra/covid/analysis/results/interaction_effect_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+
+## Normalized reads
+```{r}
+normalized_reads <- counts(dds, normalized = TRUE)
+normalized_reads <- as.data.frame(normalized_reads)
+normalized_reads <- rownames_to_column(normalized_reads, "GENEID")
+normalized_reads <- left_join(normalized_reads, ensembl_mm, by = "GENEID")
+normalized_reads <- normalized_reads[,c(18, 1:17)]
+colnames(normalized_reads)[colnames(normalized_reads) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+
+write.table(normalized_reads, '/scratch/mnc3ra/covid/analysis/results/normalized_reads.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+## Extract rlog-transformed Data
+```{r}
+rld <- rlog(dds)
+```
+
+## PCA
+```{r}
+pca <- plotPCA(rld, 
+               intgroup = c("Age", "Infection"),
+               returnData = FALSE)
+pca
+```
+```{r}
+pca <- plotPCA(rld, 
+               intgroup = c("Age", "Infection"),
+               returnData = TRUE)
+
+percentVar <- round(100 * attr(pca, "percentVar"))
+
+pca2 <- ggplot(pca, aes(PC1, PC2, color=group)) +
+   #geom_text(label = pca2$data$name, label.size = 2) + 
+   geom_point(size=8, shape = 1, stroke = 1) +
+   #scale_color_discrete(breaks=c('Young:Mock', 'Young:COVID_19', 'Aged:Mock', 'Aged:COVID_19')) +
+   scale_color_manual(values = c("Aged:COVID_19" = "blue", "Aged:Mock" = "grey", "Young:COVID_19" = "red", "Young:Mock" = "black")) +
+   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+   ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+   coord_fixed() +
+   theme_minimal() +
+   ylim(c(-25, 8))
+   
+ pca2
+ 
+ 
+ setwd("/scratch/mnc3ra/covid/analysis/")
+ ggsave("pca.tiff", dpi = 350)
+```
+
+```{r}
+pcaData <- plotPCA(rld, intgroup= "condition", returnData=TRUE)
+ percentVar <- round(100 * attr(pcaData, "percentVar"))
+ pca2 <- ggplot(pcaData, aes(PC1, PC2, color=condition)) +
+   geom_point(size=6, shape = 20) +
+   scale_color_manual(values = c("WT" = "black", "STAT1_KO" = "red")) +
+   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+   ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+   coord_fixed() +
+   theme_minimal() +
+   ylim(-40, 40) +
+   xlim(-42,42)
+ pca2
+```
+
+# FPKM
+```{r}
+# generate table
+fpkm <- as.data.frame(fpkm(dds, robust = TRUE))
+
+#format
+fpkm <- rownames_to_column(fpkm, "GENEID")
+
+#annotate & reorder collumns
+fpkm <- left_join(fpkm, ensembl_mm, by = "GENEID")
+fpkm <- fpkm[,c(18, 1:17)]
+colnames(fpkm)[colnames(fpkm) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+
+# insert columns for group averages and standard deviations
+fpkm$YM_Mean <- rowMeans(fpkm[,3:6])
+fpkm$YM_SD <- apply(fpkm[,3:6], 1, sd, na.rm = FALSE)
+
+fpkm$YS_Mean <- rowMeans(fpkm[,7:10])
+fpkm$YS_SD <- apply(fpkm[,7:10], 1, sd, na.rm = FALSE)
+
+fpkm$AM_Mean <- rowMeans(fpkm[,11:14])
+fpkm$AM_SD <- apply(fpkm[,11:14], 1, sd, na.rm = FALSE)
+
+fpkm$AS_Mean <- rowMeans(fpkm[,15:18])
+fpkm$AS_SD <- apply(fpkm[,15:18], 1, sd, na.rm = FALSE)
+
+fpkm_summary <- fpkm[,c(1:2, 19:26)]
+
+# export
+write.table(fpkm, '/scratch/mnc3ra/covid/analysis/results/fpkm_matrix.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(fpkm_summary, '/scratch/mnc3ra/covid/analysis/results/fpkm_summary.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+
+# Subsetted Models
+## Subset colData
+```{r}
+colData_YM_AM <- colData[c(1:4, 9:12),]
+colData_YM_YS <- colData[c(1:4, 5:8),]
+colData_AM_AS <- colData[c(9:16),]
+```
+
+## Young-Mock vs. Aged-Mock
+### Define samples based on selected comparison
+```{r}
+sample_files_YM_AM <- c("YM_1_salmon_quant.sf",
+                  "YM_2_salmon_quant.sf",
+                  "YM_3_salmon_quant.sf",
+                  "YM_4_salmon_quant.sf",
+                  "AM_1_salmon_quant.sf",
+                  "AM_2_salmon_quant.sf",
+                  "AM_3_salmon_quant.sf",
+                  "AM_4_salmon_quant.sf")
+
+names(sample_files_YM_AM) <- c("YM_1", 
+                         "YM_2",
+                         "YM_3",
+                         "YM_4",
+                         "AM_1",
+                         "AM_2",
+                         "AM_3",
+                         "AM_4")
+```
+
+### Import files with TxImport
+```{r}
+library(tximport)
+setwd("/scratch/mnc3ra/covid/salmon_files/quant_files/")
+
+txi_YM_AM <- tximport(files = sample_files_YM_AM, 
+         type = "salmon", 
+         tx2gene = tx2gene,
+         txOut = FALSE, 
+         ignoreTxVersion = TRUE)
+```
+
+### Set rownames to column names
+```{r}
+rownames(colData_YM_AM) <- colnames(txi_YM_AM$counts)
+
+colnames(txi_YM_AM$counts) == rownames(colData_YM_AM)
+```
+
+### Run dds
+```{r}
+dds_YM_AM = DESeqDataSetFromTximport(txi = txi_YM_AM, 
+                               colData = colData_YM_AM,
+                               design = ~Age)
+
+dds_YM_AM <- DESeq(dds_YM_AM)
+```
+
+### Results
+```{r}
+# generate table
+res_YM_AM <- results(dds_YM_AM, contrast = c("Age", "Aged", "Young"))
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds_YM_AM)
+res_YM_AM_LFC <- lfcShrink(dds_YM_AM, coef = "Age_Young_vs_Aged", type = "apeglm")
+
+# convert to data frame
+res_YM_AM <- as.data.frame(res_YM_AM)
+res_YM_AM_LFC <- as.data.frame(res_YM_AM_LFC)
+
+# rownames to columns
+res_YM_AM <- rownames_to_column(res_YM_AM, "GENEID")
+res_YM_AM_LFC <- rownames_to_column(res_YM_AM_LFC, "GENEID")
+
+# add gene names
+res_YM_AM <- left_join(res_YM_AM, ensembl_mm, by = "GENEID")
+res_YM_AM <- res_YM_AM[,c(8, 1:7)]
+
+res_YM_AM_LFC <- left_join(res_YM_AM_LFC, ensembl_mm, by = "GENEID")
+res_YM_AM_LFC <- res_YM_AM_LFC[,c(7, 1:6)]
+
+# rename first two columns
+colnames(res_YM_AM)[colnames(res_YM_AM) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_YM_AM_LFC)[colnames(res_YM_AM_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+
+```
+
+### Export
+```{r}
+write.table(res_YM_AM, '/scratch/mnc3ra/covid/analysis/results/YM_AM_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_YM_AM_LFC, '/scratch/mnc3ra/covid/analysis/results/YM_AM_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+
+## Young Mock vs. Young SARS-CoV-2
+### Define samples based on selected comparison
+```{r}
+sample_files_YM_YS <- c("YM_1_salmon_quant.sf",
+                  "YM_2_salmon_quant.sf",
+                  "YM_3_salmon_quant.sf",
+                  "YM_4_salmon_quant.sf",
+                  "YS_1_salmon_quant.sf",
+                  "YS_2_salmon_quant.sf",
+                  "YS_3_salmon_quant.sf",
+                  "YS_4_salmon_quant.sf")
+
+names(sample_files_YM_YS) <- c("YM_1", 
+                         "YM_2",
+                         "YM_3",
+                         "YM_4",
+                         "YS_1",
+                         "YS_2",
+                         "YS_3",
+                         "YS_4")
+```
+
+### Import files with TxImport
+```{r}
+library(tximport)
+setwd("/scratch/mnc3ra/covid/salmon_files/quant_files/")
+
+txi_YM_YS <- tximport(files = sample_files_YM_YS, 
+         type = "salmon", 
+         tx2gene = tx2gene,
+         txOut = FALSE, 
+         ignoreTxVersion = TRUE)
+```
+
+### Set rownames to column names
+```{r}
+rownames(colData_YM_YS) <- colnames(txi_YM_YS$counts)
+
+colnames(txi_YM_YS$counts) == rownames(colData_YM_YS)
+```
+
+### Run dds
+```{r}
+dds_YM_YS = DESeqDataSetFromTximport(txi = txi_YM_YS, 
+                               colData = colData_YM_YS,
+                               design = ~Infection)
+
+dds_YM_YS <- DESeq(dds_YM_YS)
+```
+
+### Results
+```{r}
+# generate table
+res_YM_YS <- results(dds_YM_YS, contrast = c("Infection", "COVID_19", "Mock"))
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds_YM_YS)
+res_YM_YS_LFC <- lfcShrink(dds_YM_YS, coef = "Infection_Mock_vs_COVID_19", type = "apeglm")
+
+# convert to data frame
+res_YM_YS <- as.data.frame(res_YM_YS)
+res_YM_YS_LFC <- as.data.frame(res_YM_YS_LFC)
+
+# rownames to columns
+res_YM_YS <- rownames_to_column(res_YM_YS, "GENEID")
+res_YM_YS_LFC <- rownames_to_column(res_YM_YS_LFC, "GENEID")
+
+# add gene names
+res_YM_YS <- left_join(res_YM_YS, ensembl_mm, by = "GENEID")
+res_YM_YS <- res_YM_YS[,c(8, 1:7)]
+
+res_YM_YS_LFC <- left_join(res_YM_YS_LFC, ensembl_mm, by = "GENEID")
+res_YM_YS_LFC <- res_YM_YS_LFC[,c(7, 1:6)]
+
+# rename first two columns
+colnames(res_YM_YS)[colnames(res_YM_YS) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_YM_YS_LFC)[colnames(res_YM_YS_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+```
+
+### Export
+```{r}
+write.table(res_YM_YS, '/scratch/mnc3ra/covid/analysis/results/YM_YS_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_YM_YS_LFC, '/scratch/mnc3ra/covid/analysis/results/YM_YS_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+
+## Aged Mock vs. Aged SARS-CoV-2
+### Define samples based on selected comparison
+```{r}
+sample_files_AM_AS <- c("AM_1_salmon_quant.sf",
+                  "AM_2_salmon_quant.sf",
+                  "AM_3_salmon_quant.sf",
+                  "AM_4_salmon_quant.sf",
+                  "AS_1_salmon_quant.sf",
+                  "AS_2_salmon_quant.sf",
+                  "AS_3_salmon_quant.sf",
+                  "AS_4_salmon_quant.sf")
+
+names(sample_files_AM_AS) <- c("AM_1", 
+                         "AM_2",
+                         "AM_3",
+                         "AM_4",
+                         "AS_1",
+                         "AS_2",
+                         "AS_3",
+                         "AS_4")
+```
+
+### Import files with TxImport
+```{r}
+library(tximport)
+setwd("/scratch/mnc3ra/covid/salmon_files/quant_files/")
+
+txi_AM_AS <- tximport(files = sample_files_AM_AS, 
+         type = "salmon", 
+         tx2gene = tx2gene,
+         txOut = FALSE, 
+         ignoreTxVersion = TRUE)
+```
+
+### Set rownames to column names
+```{r}
+rownames(colData_AM_AS) <- colnames(txi_AM_AS$counts)
+
+colnames(txi_AM_AS$counts) == rownames(colData_AM_AS)
+```
+
+### Run dds
+```{r}
+dds_AM_AS = DESeqDataSetFromTximport(txi = txi_AM_AS, 
+                               colData = colData_AM_AS,
+                               design = ~Infection)
+
+dds_AM_AS <- DESeq(dds_AM_AS)
+```
+
+### Results
+```{r}
+# generate table
+res_AM_AS <- results(dds_AM_AS, contrast = c("Infection", "COVID_19", "Mock"))
+
+# shrink LFCs for gene ranking and data visualization
+resultsNames(dds_AM_AS)
+res_AM_AS_LFC <- lfcShrink(dds_AM_AS, coef = "Infection_Mock_vs_COVID_19", type = "apeglm")
+
+# convert to data frame
+res_AM_AS <- as.data.frame(res_AM_AS)
+res_AM_AS_LFC <- as.data.frame(res_AM_AS_LFC)
+
+# rownames to columns
+res_AM_AS <- rownames_to_column(res_AM_AS, "GENEID")
+res_AM_AS_LFC <- rownames_to_column(res_AM_AS_LFC, "GENEID")
+
+# add gene names
+res_AM_AS <- left_join(res_AM_AS, ensembl_mm, by = "GENEID")
+res_AM_AS <- res_AM_AS[,c(8, 1:7)]
+
+res_AM_AS_LFC <- left_join(res_AM_AS_LFC, ensembl_mm, by = "GENEID")
+res_AM_AS_LFC <- res_AM_AS_LFC[,c(7, 1:6)]
+
+# rename first two columns
+colnames(res_AM_AS)[colnames(res_AM_AS) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+colnames(res_AM_AS_LFC)[colnames(res_AM_AS_LFC) == c("GENENAME", "GENEID")] <- c("Gene_Name", "Gene_ID")
+```
+
+### Export
+```{r}
+write.table(res_AM_AS, '/scratch/mnc3ra/covid/analysis/results/AM_AS_results.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+write.table(res_AM_AS_LFC, '/scratch/mnc3ra/covid/analysis/results/AM_AS_results_apeglm.csv', quote=FALSE, sep=",", row.names=FALSE, col.names=TRUE)
+```
+
+## Pair-wise comparisons results summaries
+```{r}
+summary(res_YM_AM)
+summary(res_AM_AS)
+summary(res_YM_YS)
+```
+## PCA
+```{r}
+rld_YM_AM <- rlog(dds_YM_AM)
+rld_YM_YS <- rlog(dds_YM_YS)
+rld_AM_AS <- rlog(dds_AM_AS)
+
+pca_YM_AM <- plotPCA(rld_YM_AM, 
+               intgroup = "Age")
+
+pca_YM_YS <- plotPCA(rld_YM_YS, 
+               intgroup = "Infection")
+
+pca_AM_AS <- plotPCA(rld_AM_AS, 
+               intgroup = "Infection")
+
+pca_YM_AM
+pca_YM_YS
+pca_AM_AS
+```
+
