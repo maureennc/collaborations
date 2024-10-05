@@ -1,0 +1,184 @@
+---
+title: "Zong-Nguyen"
+author: "Maureen Cowan"
+date: "2023-01-9"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Gene Ontology Analysis
+
+### Bubble plot
+```{r}
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+
+go <- read.csv("GO_up.csv")
+
+go_interest <- go[c(2, 4, 5, 19, 21, 22, 29, 31, 33, 37, 45), ]
+
+go_interest <- data.table(go_interest) #need data.table library for this
+
+# Convert Gene ratio from character to numeric vector
+frac <- go_interest$GeneRatio
+frac <- sapply(frac, function(x) eval(parse(text=x)))
+
+
+go_interest$Ratio <- frac
+go_interest <- go_interest[order(-Count), ] #order function requires data.table
+
+
+bubble_plot_V1 <- ggplot(data = go_interest, 
+                      aes(x=Ratio, y=reorder(Description, Count), size = Count, fill = p.adjust)) + 
+                      geom_point(alpha=0.7, shape = 21) +
+                      scale_size(range = c(2.5, 8)) +
+                      scale_fill_continuous(low = "blue", high = "red") +
+                      theme_bw() +
+                      xlab("Gene Ratio") + 
+                      ylab("")
+
+bubble_plot_V1
+
+ggsave("bubble_plot_V1.tiff", dpi = 300)
+```
+
+
+### Bubble plot, V2
+```{r}
+go_interest <- go[c(20, 38, 2, 5, 12, 33, 107, 55, 45, 46), ]
+
+go_interest <- data.table(go_interest) #need data.table library for this
+
+# Convert Gene ratio from character to numeric vector
+frac <- go_interest$GeneRatio
+frac <- sapply(frac, function(x) eval(parse(text=x)))
+
+
+go_interest$Ratio <- frac
+go_interest <- go_interest[order(-Count), ] #order function requires data.table
+
+
+bubble_plot_V2 <- ggplot(data = go_interest, 
+                      aes(x=Ratio, y=reorder(Description, Count), size = Count, fill = p.adjust)) + 
+                      geom_point(alpha=0.7, shape = 21) +
+                      scale_size(range = c(2.5, 8)) +
+                      scale_fill_continuous(low = "blue", high = "red") +
+                      theme_bw() +
+                      xlab("Gene Ratio") + 
+                      ylab("")
+
+bubble_plot_V2
+
+ggsave("bubble_plot_V2.tiff", dpi = 300)
+```
+
+# Differential Gene Expression
+### Enhanced Volcano
+```{r}
+#BiocManager::install("EnhancedVolcano") ## Install first session only
+
+library(EnhancedVolcano)
+results <- read.csv("sham_vs_toxo_DESeq2.txt", sep="", header = TRUE)
+
+Volcano <- EnhancedVolcano(results,
+    lab = results$gene_id,
+    selectLab = c('Ubd', 'H2-Ab1', 'H2-Oa', 'Stat1', 'Tgtp1', 'Cxcl9', 'Gbp2b', 'Ciita', 'Il1rl1', 'Fcrls', 'Tgfb2'),
+    x = 'log2FoldChange',
+    y = 'pvalue',
+    title = 'Sham vs. Toxo Macrophages',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    pointSize = 2.0,
+    labSize = 7,
+    col=c('grey', 'grey', 'grey', 'blue'),
+    shape = 1,
+    colAlpha = 0.5,
+    legendLabSize = (8), # size of gene names
+    xlim = c(-5, 8.5),
+    widthConnectors = 0.75,
+    drawConnectors = TRUE,
+    legendPosition = 'none')
+
+Volcano
+
+#Il1rl1 is ST2. We have shown that during Toxo infection, it is downregulated (Katherine Still, PLOS Pathogens)
+
+#options(ggrepel.max.overlaps = Inf)
+
+ggsave("Volcano.tiff", dpi = 300)
+```
+
+
+# CountData: Heatmaps
+
+```{r}
+countData <- read.csv("count_TAM_sham_vs_toxo.txt", sep=",", header = TRUE, row.names= 1)
+
+rld <- rlog(countData)
+
+write.csv(assay(rld), "rld_counts.csv", sep = ",", row.names = 1)
+
+```
+
+## DESeqDataSetFromMatrix
+
+To use DESeqDataSetFromMatrix, the user should provide the counts matrix, the information about the samples (the columns of the count matrix) as a DataFrame or data.frame, and the design formula.
+
+### Setup
+```{r}
+#BiocManager::install("DESeq2") ## Install first session only
+library(DESeq2)
+```
+
+### Define Arguments
+```{r}
+#colData: DF with at least one column. Rows correspond to columns of countData.
+colData <- data.frame(condition = factor(c("Toxo", "Sham", "Toxo", "Sham", "Sham", "Toxo", "Toxo", "Toxo", "Sham", "Sham")))
+
+rownames(colData) <- c("M_19116_S9", "M_19120_S2", "M_19121_S10", "M_19122_S3", "M_19184_S1", "M_19190_S8", "M_19193_S7", "M_19198_S6", "M_19510_S4", "M_19517_S5")
+
+
+#cts: matrix
+countData = as.matrix(read.csv("count_TAM_sham_vs_toxo.txt", sep=",", header = TRUE, row.names= 1)) ##variable name for countData matrix
+
+  
+#design: formula that expresses how the counts for each gene depend on the variables in colData. Use ~condition design since there are two groups being compared
+
+design = ~condition #Design depends on condition as an explanatory variable
+
+```
+
+
+### Recreate the DESeq2 object
+```{r}
+
+dds <- DESeqDataSetFromMatrix(countData = (countData),
+                              colData,
+                              design)
+
+## NOTE: Some of the values in the assay are not integers. These values have been normalized.
+
+```
+
+###  
+```{r}
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("condition","Sham", "Toxo")) ## define numerator and denominator. set the group you want on the left of a volcano plot first. 
+
+#res <- results(dds)
+```
+
+
+## Import files
+```{r}
+#countData <- read.csv("count_TAM_sham_vs_toxo.txt", sep = ",")
+
+```
+

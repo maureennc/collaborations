@@ -1,0 +1,200 @@
+---
+title: "Yen Figures"
+author: "Maureen Cowan"
+date: "2023-01-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Gene Ontology Analysis
+
+## Load required libraries
+```{r}
+
+
+library(ggplot2)
+library(dplyr)
+library(data.table)
+```
+
+## Bubble plot
+```{r}
+go <- read.csv("GO_up.csv")
+
+go_interest <- go[c(20, 38, 2, 5, 12, 33, 107, 55, 45, 46), ]
+
+go_interest <- data.table(go_interest) #need data.table library for this
+
+# Convert Gene ratio from character to numeric vector
+frac <- go_interest$GeneRatio
+frac <- sapply(frac, function(x) eval(parse(text=x)))
+
+
+go_interest$Ratio <- frac
+go_interest <- go_interest[order(-Count), ] #order function requires data.table
+
+
+## Yen wanted to remove "positive regulation of cell activation" and "alpha-beta T cell activation"
+
+go_interest <- go_interest[c(2:8, 10), ]
+
+
+
+## Bubble plot
+bubble_plot_V2 <- ggplot(data = go_interest, 
+                      aes(x=Ratio, y=reorder(Description, Count), size = Count, fill = p.adjust)) + 
+                      geom_point(alpha=0.7, shape = 21) +
+                      scale_size(range = c(2.5, 10)) +
+                      scale_fill_continuous(low = "orange", high = "red") +
+                      theme_bw() +
+                      xlab("Gene Ratio") + 
+                      ylab("") +
+                      xlim(0.02, 0.08)
+
+bubble_plot_V2
+
+
+ggsave("GO-bubble-plot-V3.tiff", dpi = 300)
+
+```
+
+
+# Heat maps
+
+## Load rlog-normalized countData
+```{r}
+rld <- read.csv(file = "G1_DESeq_rlog.txt", sep = "")
+
+# Format table as tibble
+library(tibble)
+rld <- as.tibble(rld)
+
+# Sample names
+
+colnames(rld) <- c("external_gene_name", "Toxo_1", "Sham_1", "Toxo_2", "Sham_2", "Sham_3", "Toxo_3", "Toxo_4", "Toxo_5", "Sham_4", "Sham_5")
+
+rld <- column_to_rownames(rld, "external_gene_name")
+
+```
+
+
+## Response to interferon-gamma
+
+```{r}
+### Identify rows with genes of interest
+gamma<- as.data.frame(list
+                             (c("Ccl2", "Ccl5", "Cd40", "Cd74", "Ciita", "Gbp2", "Gbp3", "Gbp4", "Gbp5", "Gbp6", "Gbp7", "Gbp8", "Gbp9", "Gbp10", "Igtp", "Irf1", "Irgm1", "Jak1", "Jak2", "Nos2", "Stat1" ))) 
+
+colnames(gamma) <- "external_gene_id"
+
+
+
+# Search
+gamma_genes <- which(rownames(rld) %in% gamma$external_gene_id) #rld is the rlog-normalized countData
+gamma_genes <- as.numeric(gamma_genes)
+gamma_genes
+
+
+paste0(gamma_genes, sep = "", collapse = ", ")
+
+# pheatmap
+library(pheatmap)
+
+hm_gamma_genes <- rld[c(4118, 4132, 4266, 4287, 4757, 7988, 7990, 7992, 7993, 7994, 7995, 7996, 7997, 7998, 10953, 11189, 11202, 11310, 11311, 15337, 21573), ]
+
+hm_gamma <- pheatmap(hm_gamma_genes,
+         scale = 'row',
+         cutree_cols = 2,
+         cluster_cols = TRUE, 
+         fontsize = 7)
+
+hm_gamma
+
+ggsave("IFN-gamma_heatmap.tiff", dpi = 300)
+```
+
+
+## Antigen processing and presentation
+```{r}
+
+### Identify rows with genes of interest
+antigen <- as.data.frame(list(c("B2m", "Cd74", "Ctse", "Ctsl", "Ctss", "Erap1", "Ext1", "Fcer1g", "Fcgr1", "Fcgr3", "Fcgr4", "H2-Aa", "H2-Ab1", "H2-D1", "H2-DMa", "H2-DMb1", "H2-DMb2", "H2-Eb1", "H2-K1", "H2-M3", "H2-M5", "H2-Oa", "H2-Ob", "H2-Q1", "H2-Q2", "H2-Q4", "Mr1", "Tap1", "Tap2" )))
+
+colnames(antigen) <- "external_gene_id"
+
+
+# Search
+antigen_genes <- which(rownames(rld) %in% antigen$external_gene_id)
+antigen_genes <- as.numeric(antigen_genes)
+antigen_genes
+
+
+# pheatmap
+library(pheatmap)
+
+hm_antigen_genes <- rld[c(3118, 4287, 5440, 5446, 5452, 6921, 7078, 7464, 7468, 7470, 7471, 10164, 10165, 10167, 10168, 10170, 10172, 10174, 10187, 10188, 10190, 10191, 10192, 10194, 10195, 14432, 21930, 21932), ]
+
+pheatmap(hm_antigen_genes,
+         scale = 'row',
+         cutree_cols = 2,
+         cluster_cols = TRUE,
+         fontsize = 7)
+
+ggsave("antigen-presentation_heatmap.tiff", dpi = 300)
+
+```
+
+## Leukocyte migration
+
+```{r}
+
+### Identify rows with genes of interest
+migration <- as.data.frame(list(c("Ada", "Add2", "Adora1", "Aimp1", "Ccl25", "Cd34", "Ccl1", "Ccl2", "Ccl5", "Chst2", "Cklf", "Cnn2", "Csf1", "Cx3cr1", "Cxcr3", "Lgals3", "Mif", "Myo1f", "Myo1g", "Myo9b", "P2rx4", "P2ry12", "Spp1", "Trem1", "Trem2", "Xcl1"  )))
+
+colnames(migration) <- "external_gene_id"
+
+
+# Search
+migration_genes <- which(rownames(rld) %in% migration$external_gene_id)
+migration_genes <- as.numeric(migration_genes)
+migration_genes
+
+#paste0(migration_genes, sep = "", collapse = ",")
+
+# pheatmap
+library(pheatmap)
+
+hm_migration_genes <- rld[c(1966,2052,2101,2202,4113,4118,4125,4132,4257,4729,4780,4973,5327,5488,5505,12087,13012,14816,14817,14828,16968,16975,21360,22988,22989,24378), ]
+
+pheatmap(hm_migration_genes,
+         scale = 'row',
+         cutree_cols = 2,
+         cluster_cols = TRUE,
+         fontsize = 7)
+
+ggsave("migration_heatmap.tiff", dpi = 300)
+```
+
+
+
+
+###### Annotate file with ENSEMBL IDs
+```{r}
+mart <- read.csv("/Users/maureen/Documents/tools/biomart.csv")
+# there are a lot of duplicates for some reason
+mart <- unique(mart[1:2])
+
+rld_anno <- left_join(rld, mart, by = "external_gene_name")
+
+#reorder columns
+rld_anno <- rld_anno[ , c(12, 2:11)]
+
+# drop na
+rld_anno <- na.omit(rld_anno)
+
+rld_anno <- tibble::column_to_rownames(rld_anno, "ensembl_gene_id")
+```
+
