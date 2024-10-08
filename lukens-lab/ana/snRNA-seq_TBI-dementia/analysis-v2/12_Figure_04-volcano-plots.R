@@ -10,10 +10,17 @@ library(ggplot2)
 # IMPORT DATA
 
 ## Define paths
-data_dir = '/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/analysis/2/de/cell_type/wald/pairwise-comps/size-factors'
+data_dir = '/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/submission_01/tables/cell_type/'
 
-AC = read_csv(file.path(data_dir, "AC-comparison-cell_type-filtered.csv"))
-CE = read_csv(file.path(data_dir, "CE-comparison-cell_type-filtered.csv"))
+data = read_csv(file.path(data_dir, "wald-test-cell_type-filtered.csv"))
+
+##############################################################################
+
+# CREATE DATA SUBSETS FOR FIGURE
+
+AC <- data[data$comparison == "AC",]
+CE <- data[data$comparison == "CE",]
+DE <- data[data$comparison == "DE",]
 
 ##############################################################################
 
@@ -29,7 +36,7 @@ filtered_data <- filtered_data[abs(filtered_data$log2fc) >= 0.5, ]
 
 ## Extract filtered gene names
 filtered_genes <- c('Meis1', 'Glra3', 'Rgs9', 'Rmst', 'Ptprd', 'Hs3st4', 'Unc13c', 'Sv2b',
-                    'Gm48749', 'Dram1', 'Ring1')
+                    'Gm48749', 'Dram1', 'Ring1', 'Ttr', 'Penk', 'Arhgap10', 'Aifm3')
 
 ## Volcano plot
 AC_I <- EnhancedVolcano(sub_data,
@@ -167,12 +174,12 @@ CE_E
 volcano_plots <- list(
   # "AC_inhibitory" = AC_I,
   #  "AC_excitatory" = AC_E,
-  # "CE_inhibitory" = CE_I,
-  "CE_excitatory" = CE_E
+  "CE_inhibitory" = CE_I,
+  # "CE_excitatory" = CE_E
 )
 
-
-save_path <- "/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/analysis/2/figures/wald/volcano-cell_type-curated"
+# save to new location in case the other ones change
+#save_path <- "/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/analysis/2/figures/wald/volcano-cell_type-curated"
 
 for (i in seq_along(volcano_plots)) {
   plot_name <- paste0("volcano_", names(volcano_plots)[i], ".pdf")  # Use list name for the file

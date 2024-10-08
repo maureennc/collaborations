@@ -153,13 +153,13 @@ save_dir = "/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/
 ## Export filtered versions for volcano plots
 comparison_ids = filtered_results['comparison'].unique()
 
-# Loop through each comparison and save the filtered data
+## Loop through each comparison and save the filtered data
 for comp in comparison_ids:
     df_filtered = filtered_results[filtered_results['comparison'] == comp]    
     file_name = f"{comp}-comparison-cell_type-filtered.csv"
     
     # Save the DataFrame as a CSV file
-    #df_filtered.to_csv(os.path.join(save_dir, file_name), index=False)
+    df_filtered.to_csv(os.path.join(save_dir, file_name), index=False)
 
 ###############################################################################
 
