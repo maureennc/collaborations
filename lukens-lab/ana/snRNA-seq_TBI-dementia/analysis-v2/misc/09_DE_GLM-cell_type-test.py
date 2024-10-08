@@ -303,6 +303,7 @@ filtered_results_aav = filter_de_results(results_aav)
 filtered_results_interaction = filter_de_results(results_interaction)
 
 filtered_tbi = filtered_results_tbi[filtered_results_tbi['mean'] > 0.1].copy()
+
 ###############################################################################
 
 # EXPORT DE RESULTS

@@ -10,13 +10,8 @@ Created on Fri Sep 13 11:37:38 2024
 import os
 import matplotlib.pyplot as plt
 plt.rcParams['font.family'] = 'Arial'
-
-import seaborn as sns
 import pandas as pd
 import scanpy as sc
-#sc.set_figure_params(scanpy = True, dpi = 300, dpi_save = 400)
-
-from scipy.sparse import csr_matrix
 
 # environment = 'sc-pp'
 
@@ -38,6 +33,7 @@ adata_list = [sample_A, sample_B, sample_C, sample_D, sample_E, sample_F]
 for sample in adata_list:
     print(sample)
     
+###############################################################################
 
 # CONCATENATION
 
@@ -66,7 +62,6 @@ mean_unique_genes
 
 # QC-PASSED DATA
 
-
 save_dir = "/Users/maureen/Documents/projects/lukens-lab/ana/2024_tbi-snrna-seq/analysis/1/h5ad"
 
 adata = sc.read_h5ad(os.path.join(save_dir, '1-tbi-seq-hvg.h5ad'))
@@ -74,11 +69,9 @@ adata.X = adata.layers['counts'].copy()
 
 sc.pl.violin(adata, keys = 'total_counts', groupby = 'group', ylabel = "# Transcripts per cell")
 
-
 ## Calculate median total_counts
 mean_total_counts_by_sample = adata.obs.groupby('group')['total_counts'].mean()
 mean_total_counts_by_sample
-
 
 ## Calculate mean genes per cell
 mean_unique_genes = adata.obs.groupby('group')['n_genes_by_counts'].mean()
@@ -108,10 +101,8 @@ mean_unique_genes = bdata.obs.groupby('group')['n_genes_by_counts'].mean()
 mean_unique_genes
 
 ###############################################################################
-###############################################################################
 
 # CREATE SUMMARY DF
-
 
 data = {
     'group': ['A', 'B', 'C', 'D', 'E', 'F'],
@@ -120,21 +111,19 @@ data = {
     '# after doublet detection': [4355, 6063, 5011, 5475, 4304, 3846]
 }
 
-# Convert the dictionary into a pandas DataFrame
+# Convert  dictionary into a pandas df
 df = pd.DataFrame(data)
 
 # Display the DataFrame
 print(df)
 
 ## Add percent pass for each
-# Add percent columns to the DataFrame
+## Add percent columns to the DataFrame
 df['% pass initial QC'] = (df['# cells pass initial QC'] / df['# cells cellranger_filtered']) * 100
 df['% pass doublet detection'] = (df['# after doublet detection'] / df['# cells pass initial QC']) * 100
 
 df['% high-quality'] = (df['# after doublet detection'] / df['# cells cellranger_filtered']) * 100
 
-
-# Display the updated DataFrame
 print(df)
 
 ###############################################################################
@@ -155,3 +144,5 @@ doublet_proportion = counts['doublet'] / total_cells
 
 print(f"Estimated proportion of singlets: {singlet_proportion:.2%}")
 print(f"Estimated proportion of doublets: {doublet_proportion:.2%}")
+
+###############################################################################
